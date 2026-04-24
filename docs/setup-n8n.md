@@ -1,12 +1,19 @@
 # Setup n8n dla DJ Request Box
 
-Ten dokument opisuje import i test pierwszego workflow:
+Ten dokument opisuje import i test workflow:
 
 `workflows/01-process-new-request.json`
 
-Workflow przetwarza nowy wiersz z Google Sheet, normalizuje request przez OpenAI, wyszukuje utwor w Spotify i aktualizuje ten sam wiersz statusem `FOUND` albo `NOT_FOUND`.
+Workflow dziala w trybie polling:
 
-Workflow nie dodaje utworow do playlisty Spotify. Dodawanie do playlisty bedzie obslugiwane przez osobny workflow po recznym ustawieniu statusu `APPROVED`.
+1. Co 1 minute uruchamia go `Schedule Trigger`.
+2. Workflow pobiera wiersze z Google Sheet.
+3. Przetwarza tylko wiersze, w ktorych kolumna `status` jest pusta.
+4. Dla kazdego takiego wiersza normalizuje request przez natywny node OpenAI.
+5. Wyszukuje utwor przez natywny node Spotify.
+6. Aktualizuje ten sam wiersz po kolumnie `Sygnatura czasowa`.
+
+Ten workflow nie dodaje utworow do playlisty Spotify. Konczy prace na statusie `FOUND` albo `NOT_FOUND`.
 
 ## 1. Import workflow
 
@@ -15,105 +22,106 @@ Workflow nie dodaje utworow do playlisty Spotify. Dodawanie do playlisty bedzie 
 3. Wybierz `Import from File`.
 4. Wskaz plik:
    `workflows/01-process-new-request.json`
-5. Po imporcie workflow zostaw jako `Inactive` do czasu ukonczenia konfiguracji.
-6. Otworz workflow i sprawdz sticky notes po lewej stronie. Zawieraja liste placeholderow i opis logiki.
+5. Po imporcie zostaw workflow jako `Inactive`.
+6. Otworz workflow i sprawdz sticky notes po lewej stronie.
+7. Podmien placeholdery i podepnij credentials przed pierwszym uruchomieniem.
 
 ## 2. Placeholdery do podmiany
 
-Po imporcie podmien placeholdery w node'ach Google Sheets oraz credentials.
-
-### Google Sheets
+W workflow pozostaja tylko placeholdery konfiguracyjne. Nie ma prawdziwych sekretow ani realnych ID credentials.
 
 Podmien:
 
 - `__GOOGLE_SPREADSHEET_ID__`
 - `__REQUESTS_SHEET_NAME__`
-
-Gdzie:
-
-- `__GOOGLE_SPREADSHEET_ID__` to ID arkusza z URL Google Sheet.
-- `__REQUESTS_SHEET_NAME__` to nazwa zakladki, np. `Requests`.
-
-ID arkusza jest fragmentem URL:
-
-`https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
-
-Node'y do sprawdzenia:
-
-- `Trigger - new Google Sheet row`
-- `Google Sheets - set status NEW`
-- `Google Sheets - update row FOUND`
-- `Google Sheets - update row NOT_FOUND`
-- `Google Sheets - reject missing title`
-
-### Credentials placeholders
-
-W JSON sa tylko nazwy placeholderow. Po imporcie n8n moze pokazac brakujace credentials. To jest oczekiwane.
-
-Podmien:
-
 - `__GOOGLE_SHEETS_CREDENTIAL_NAME__`
 - `__OPENAI_CREDENTIAL_NAME__`
 - `__SPOTIFY_CREDENTIAL_NAME__`
 
-Placeholder `__SPOTIFY_PLAYLIST_ID__` jest obecny tylko jako przypomnienie dla drugiego workflow. Pierwszy workflow go nie uzywa.
+`__GOOGLE_SPREADSHEET_ID__` to ID arkusza z URL:
 
-## 3. Wymagane credentials
+`https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+
+`__REQUESTS_SHEET_NAME__` to nazwa zakladki z odpowiedziami, np. `Requests`.
+
+Node'y Google Sheets do sprawdzenia:
+
+- `Google Sheets - read request rows`
+- `Google Sheets - update timestamp row FOUND`
+- `Google Sheets - update timestamp row NOT_FOUND`
+- `Google Sheets - update timestamp row missing title`
+
+## 3. Credentials do wyboru
 
 ### Google Sheets OAuth2
 
-Utworz lub wybierz credential:
+Utworz albo wybierz credential:
 
 `Google Sheets - DJ Request Box`
 
-Uzyj go w node'ach:
+Podepnij go do wszystkich node'ow `Google Sheets - ...`.
 
-- `Trigger - new Google Sheet row`
-- wszystkie node'y zaczynajace sie od `Google Sheets - ...`
-
-Credential musi miec dostep do arkusza z odpowiedziami Google Form.
+Credential musi miec dostep do spreadsheetu z odpowiedziami Google Form.
 
 ### OpenAI
 
-Utworz lub wybierz credential:
+Utworz albo wybierz credential:
 
 `OpenAI - DJ Request Box`
 
-Uzyj go w node:
+Podepnij go do:
 
-- `OpenAI - normalize title artist and query`
+- `OpenAI - normalize request to JSON`
 
-Ten node wywoluje endpoint OpenAI Chat Completions i oczekuje JSON z polami:
+Workflow uzywa natywnego node'a:
+
+`@n8n/n8n-nodes-langchain.openAi`
+
+Node jest ustawiony na model `gpt-4.1-mini`, ma wlaczone `jsonOutput: true` i prosi o odpowiedz JSON z polami:
 
 - `AI_title`
 - `AI_artist`
 - `spotify_query`
 
+Jesli w Twojej instancji n8n model nie jest dostepny, wybierz dostepny model w UI node'a OpenAI i zostaw ten sam prompt oraz `jsonOutput`.
+
 ### Spotify OAuth2
 
-Utworz lub wybierz credential:
+Utworz albo wybierz credential:
 
 `Spotify - DJ Request Box`
 
-Uzyj go w node:
+Podepnij go do:
 
-- `Spotify - search tracks`
+- `Spotify - search tracks by query`
 
-Do samego wyszukiwania wystarczy credential pozwalajacy odpytywac Spotify Web API. Scope do modyfikacji playlisty bedzie potrzebny dopiero w workflow `02-add-approved-to-spotify.json`.
+Workflow uzywa natywnego node'a:
 
-## 4. Wymagane kolumny w Google Sheet
+`n8n-nodes-base.spotify`
 
-Workflow zaklada, ze arkusz ma kolumny wejsciowe:
+Konfiguracja node'a Spotify:
 
-- `song_title_raw`
-- `artist_raw`
-- `requester_name`
-- `dedication`
+- Resource: `track`
+- Operation: `search`
+- Query: `={{ $json.spotify_query }}`
+- Limit: `5`
+
+Ten workflow tylko wyszukuje utwory. Scope do modyfikacji playlisty bedzie potrzebny dopiero w workflow `02-add-approved-to-spotify.json`.
+
+## 4. Wymagane kolumny Google Sheet
+
+Kolumny wejscia z Google Form:
+
+- `Sygnatura czasowa`
+- `Tytuł utworu`
+- `Wykonawca`
+- `Imię / stolik`
+- `Komentarz`
 - `status`
 
-Workflow umie tez odczytac kilka alternatywnych nazw z formularza, np. `Song title`, `Artist`, `Your name`, `Dedication`, ale rekomendowane sa nazwy techniczne powyzej.
+Kolumna `status` powinna byc pusta po wyslaniu formularza. To jest poprawny stan poczatkowy. Workflow traktuje pusty `status` jako sygnal: ten wiersz jest nowy i ma zostac przetworzony.
 
-Workflow zapisuje kolumny:
+Kolumny zapisywane przez workflow:
 
 - `AI_title`
 - `AI_artist`
@@ -126,95 +134,154 @@ Workflow zapisuje kolumny:
 - `status`
 - `dj_note`
 
-Wazne:
+## 5. Jak workflow wybiera wiersze
 
-- Kolumna `status` moze byc pusta dla nowych odpowiedzi.
-- Jesli `status` jest pusty, workflow ustawi `NEW`.
-- Jesli utwor zostanie znaleziony z sensowna pewnoscia, workflow ustawi `FOUND`.
-- Jesli wynik nie bedzie sensowny, workflow ustawi `NOT_FOUND` i wpisze powod w `dj_note`.
+Workflow nie uzywa Google Sheets Trigger.
 
-## 5. Jak przetestowac na jednym wierszu
+Zamiast tego:
 
-1. Utworz testowy arkusz albo skopiuj produkcyjny arkusz.
+1. `Schedule Trigger - every 1 minute` uruchamia workflow co minute.
+2. `Google Sheets - read request rows` pobiera wiersze z arkusza.
+3. `Filter - only empty status rows` zostawia tylko wiersze, gdzie `status` jest pusty.
+4. `Loop - process one request row` przetwarza wiersze pojedynczo.
+
+Workflow nie ustawia `NEW`. Pusty `status` jest stanem roboczym przed przetworzeniem. Po przetworzeniu workflow ustawia `FOUND` albo `NOT_FOUND`.
+
+## 6. Jak dziala aktualizacja tego samego wiersza
+
+Workflow aktualizuje wiersz po fizycznej kolumnie:
+
+`Sygnatura czasowa`
+
+To jest kolumna tworzona przez Google Form. Musi byc obecna w arkuszu i powinna byc unikalna dla odpowiedzi formularza.
+
+W praktyce:
+
+- node `Prepare request - map form fields` kopiuje `Sygnatura czasowa` do pola `timestamp_signature`,
+- kazdy update Google Sheets przekazuje `Sygnatura czasowa = {{ $json.timestamp_signature }}`,
+- `matchingColumns` w node'ach update jest ustawione na `Sygnatura czasowa`,
+- workflow nie uzywa `row_number` jako match key.
+
+## 7. Jak przetestowac workflow na jednym formularzu
+
+1. Utworz testowy spreadsheet albo skopiuj produkcyjny.
 2. Upewnij sie, ze workflow wskazuje testowy `__GOOGLE_SPREADSHEET_ID__`.
-3. W zakladce `Requests` dodaj jeden testowy wiersz.
-4. Wpisz minimalne dane:
+3. Upewnij sie, ze zakladka ma nazwe zgodna z `__REQUESTS_SHEET_NAME__`.
+4. Dodaj wymagane kolumny wynikowe:
+   `AI_title`, `AI_artist`, `spotify_query`, `spotify_track_name`, `spotify_artist`, `spotify_url`, `spotify_uri`, `confidence`, `status`, `dj_note`.
+5. Podepnij formularz Google Form do arkusza.
+6. Wyslij jedna testowa odpowiedz przez formularz:
 
-| song_title_raw | artist_raw | requester_name | dedication | status |
-| --- | --- | --- | --- | --- |
-| September | Earth, Wind & Fire | Test table | Test request | |
+| Sygnatura czasowa | Tytuł utworu | Wykonawca | Imię / stolik | Komentarz | status |
+| --- | --- | --- | --- | --- | --- |
+| automatycznie z formularza | September | Earth, Wind & Fire | stolik 4 | test | |
 
-5. W n8n otworz workflow.
-6. Kliknij `Execute Workflow` albo wlacz workflow i poczekaj na polling triggera.
-7. Sprawdz wykonanie krok po kroku:
-   - `Prepare request data and default status NEW` powinien pokazac `status: NEW`.
-   - `OpenAI - normalize title artist and query` powinien zwrocic JSON z `AI_title`, `AI_artist`, `spotify_query`.
-   - `Spotify - search tracks` powinien zwrocic liste wynikow.
-   - `Evaluate Spotify result and confidence` powinien ustawic `status` na `FOUND` albo `NOT_FOUND`.
-8. W Google Sheet sprawdz, czy ten sam wiersz ma uzupelnione pola Spotify.
+7. W n8n kliknij `Execute Workflow` albo aktywuj workflow i poczekaj maksymalnie 1 minute.
+8. Otworz execution i sprawdz kolejne node'y:
+   - `Google Sheets - read request rows` powinien pobrac wiersz testowy.
+   - `Filter - only empty status rows` powinien przepuscic wiersz, bo `status` jest pusty.
+   - `Prepare request - map form fields` powinien pokazac `form_title = September` i `timestamp_signature` z kolumny `Sygnatura czasowa`.
+   - `OpenAI - normalize request to JSON` powinien zwrocic `AI_title`, `AI_artist`, `spotify_query`.
+   - `Spotify - search tracks by query` powinien zwrocic wyniki Spotify.
+   - `Evaluate Spotify results and confidence` powinien wybrac najlepszy wynik i ustawic `FOUND` albo `NOT_FOUND`.
+9. W Google Sheet sprawdz, czy uzupelniony zostal wiersz z ta sama `Sygnatura czasowa`.
 
-Oczekiwany wynik dla poprawnego testu:
+Oczekiwany wynik dla poprawnego requestu:
 
-- `AI_title` nie jest puste.
-- `spotify_query` nie jest puste.
-- `spotify_uri` jest wypelnione.
-- `confidence` jest wieksze lub rowne `0.65`.
-- `status = FOUND`.
-- `dj_note` przypomina, ze DJ musi recznie zaakceptowac request przed dodaniem do playlisty.
+- `status = FOUND`
+- `AI_title` wypelnione
+- `AI_artist` wypelnione albo puste, jesli OpenAI nie jest pewne wykonawcy
+- `spotify_query` wypelnione
+- `spotify_track_name` wypelnione
+- `spotify_artist` wypelnione
+- `spotify_url` wypelnione
+- `spotify_uri` wypelnione
+- `confidence >= 0.65`
+- `dj_note` informuje, ze DJ musi recznie zaakceptowac request
 
-## 6. Test negatywny
+## 8. Jak sprawdzic, czy update trafia do wlasciwego wiersza
 
-Dodaj drugi wiersz z losowym albo niepelny tytulem:
+W execution n8n sprawdz:
 
-| song_title_raw | artist_raw | requester_name | dedication | status |
-| --- | --- | --- | --- | --- |
-| asdfgh impossible song | | Test table | Test request | |
+1. Node `Prepare request - map form fields`.
+2. Pole `timestamp_signature`.
+3. Node koncowy Google Sheets, np. `Google Sheets - update timestamp row FOUND`.
+4. Wartosc przekazywana w polu `Sygnatura czasowa`.
+
+Te wartosci powinny byc takie same:
+
+- `timestamp_signature`
+- update `Sygnatura czasowa`
+- wartosc w arkuszu w kolumnie `Sygnatura czasowa`
+
+Najprostszy test: wyslij formularz tylko raz, zapamietaj jego timestamp i sprawdz, czy workflow uzupelnil dokladnie ten wiersz.
+
+## 9. Test braku tytulu
+
+Wyslij formularz bez tytulu albo recznie dodaj testowy wiersz z pustym polem `Tytuł utworu` i pustym `status`.
+
+Oczekiwany wynik:
+
+- `status = NOT_FOUND`
+- `dj_note = Missing song title in the form response...`
+- workflow nie uruchamia OpenAI ani Spotify dla tego wiersza
+
+## 10. Test braku sensownego wyniku Spotify
+
+Wyslij formularz z losowym tytulem i pustym `status`:
+
+| Sygnatura czasowa | Tytuł utworu | Wykonawca | Imię / stolik | Komentarz | status |
+| --- | --- | --- | --- | --- | --- |
+| automatycznie z formularza | asdfgh impossible song xyz | | stolik test | test | |
 
 Oczekiwany wynik:
 
 - `status = NOT_FOUND`
 - `spotify_uri` puste
+- `confidence` niskie albo `0`
 - `dj_note` zawiera informacje, ze nie znaleziono sensownego wyniku
 
-## 7. Zasady bezpieczenstwa
+## 11. Zasady bezpieczenstwa
 
-- Nie wpisuj tokenow ani API keys bezposrednio w workflow JSON.
+- Nie wpisuj tokenow ani API keys do workflow JSON.
 - Nie aktywuj workflow na produkcyjnym arkuszu przed testem na kopii.
-- Nie zmieniaj statusu na `APPROVED` automatycznie w tym workflow.
-- Ten workflow konczy prace na `FOUND` albo `NOT_FOUND`.
-- Dodawanie do Spotify playlisty moze zrobic dopiero workflow `02-add-approved-to-spotify.json`.
+- Nie ustawiaj automatycznie `APPROVED` w tym workflow.
+- Nie dodawaj w tym workflow nic do playlisty Spotify.
+- Dodawanie do playlisty moze zrobic dopiero osobny workflow po recznej akceptacji DJ-a.
 
-## 8. Typowe problemy
+## 12. Typowe problemy
 
-### n8n nie widzi arkusza
-
-Sprawdz:
-
-- czy credential Google ma dostep do pliku,
-- czy spreadsheet ID jest poprawny,
-- czy nazwa zakladki zgadza sie dokladnie z `__REQUESTS_SHEET_NAME__`.
-
-### Update row nie dziala
+### Workflow nie widzi nowych formularzy
 
 Sprawdz:
 
-- czy trigger zwraca `row_number`,
-- czy arkusz ma naglowki w pierwszym wierszu,
-- czy nazwy kolumn docelowych istnieja w arkuszu.
+- czy `Schedule Trigger - every 1 minute` jest aktywny,
+- czy `Google Sheets - read request rows` wskazuje poprawny spreadsheet i sheet,
+- czy kolumna `status` w nowym wierszu jest naprawde pusta.
+
+### Update trafia w zly wiersz albo nie dziala
+
+Sprawdz:
+
+- czy arkusz ma kolumne `Sygnatura czasowa`,
+- czy wartosci w `Sygnatura czasowa` sa unikalne,
+- czy node update ma `matchingColumns = Sygnatura czasowa`,
+- czy `Prepare request - map form fields` ustawia `timestamp_signature`.
 
 ### OpenAI node zwraca blad
 
 Sprawdz:
 
 - czy credential OpenAI jest podpiety,
-- czy konto ma dostep do modelu ustawionego w node,
-- czy endpoint Chat Completions jest dostepny w Twojej konfiguracji n8n.
+- czy model jest dostepny w Twojej instancji,
+- czy `jsonOutput` jest wlaczone,
+- czy odpowiedz zawiera `AI_title`, `AI_artist`, `spotify_query`.
 
 ### Spotify nie zwraca wynikow
 
 Sprawdz:
 
 - czy credential Spotify jest podpiety,
-- czy OAuth token jest aktywny,
-- czy `spotify_query` nie jest puste,
-- czy rynek `PL` w node `Spotify - search tracks` jest odpowiedni dla wydarzenia.
+- czy node ma `Resource = track`,
+- czy node ma `Operation = search`,
+- czy `spotify_query` nie jest puste.

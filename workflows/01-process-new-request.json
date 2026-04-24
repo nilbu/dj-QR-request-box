@@ -3,43 +3,57 @@
   "nodes": [
     {
       "parameters": {
-        "content": "MVP workflow: Google Form response in Google Sheet -> OpenAI normalization -> Spotify Search -> update the same row. This workflow never adds tracks to a playlist. Playlist placeholder for the next workflow: __SPOTIFY_PLAYLIST_ID__.",
+        "content": "Workflow 01: every minute read Google Sheet rows, process only rows with empty status, normalize with native OpenAI node, search with native Spotify node, update the matched row by Sygnatura czasowa. This workflow does not add anything to a Spotify playlist.",
         "height": 180,
-        "width": 360
+        "width": 420
       },
       "id": "0f5cf2e4-3dd1-4ae5-81da-0a2ec9341b9a",
       "name": "README - workflow scope",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -760,
+        -1180,
         -360
       ]
     },
     {
       "parameters": {
-        "content": "Required placeholders to replace after import:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __OPENAI_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n- __SPOTIFY_PLAYLIST_ID__ is reserved for workflow 02.",
-        "height": 240,
-        "width": 360
+        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __OPENAI_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Empty status means the row is new and ready to process.",
+        "height": 260,
+        "width": 420
       },
       "id": "e4b6fd7d-9ced-4837-b182-b281d1dfc646",
-      "name": "README - placeholders",
+      "name": "README - placeholders and match key",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -760,
-        -120
+        -1180,
+        -140
       ]
     },
     {
       "parameters": {
-        "pollTimes": {
-          "item": [
+        "rule": {
+          "interval": [
             {
-              "mode": "everyMinute"
+              "field": "minutes",
+              "minutesInterval": 1
             }
           ]
-        },
+        }
+      },
+      "id": "2a7774c1-2db2-467b-8288-3b0893a8f5b5",
+      "name": "Schedule Trigger - every 1 minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
         "documentId": {
           "__rl": true,
           "value": "__GOOGLE_SPREADSHEET_ID__",
@@ -50,67 +64,60 @@
           "value": "__REQUESTS_SHEET_NAME__",
           "mode": "name"
         },
-        "event": "rowAdded",
         "options": {}
       },
-      "id": "3ab3fc3d-8348-4ff6-af2d-ff5f2d6e0e54",
-      "name": "Trigger - new Google Sheet row",
-      "type": "n8n-nodes-base.googleSheetsTrigger",
-      "typeVersion": 1,
+      "id": "a0d7f88b-7f49-491f-a79b-bd64bc761b13",
+      "name": "Google Sheets - read request rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
       "position": [
-        -320,
-        160
+        -440,
+        120
       ],
       "credentials": {
-        "googleSheetsTriggerOAuth2Api": {
-          "id": "__GOOGLE_SHEETS_CREDENTIAL_ID__",
+        "googleSheetsOAuth2Api": {
           "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "const row = $json;\n\nfunction firstValue(keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nconst rowNumber = row.row_number || row.rowNumber || row.__rowNum__ || row._rowNumber || row['Row Number'] || '';\nconst originalStatus = firstValue(['status', 'Status']);\nconst songTitle = firstValue(['song_title_raw', 'Song title', 'Song Title', 'title', 'Title', 'Tytul utworu']);\nconst artist = firstValue(['artist_raw', 'Artist', 'artist', 'Wykonawca']);\nconst requester = firstValue(['requester_name', 'Your name', 'Name', 'Imie', 'Stolik', 'Table']);\nconst dedication = firstValue(['dedication', 'Dedication', 'Dedykacja', 'note', 'Note']);\n\nconst normalizedStatus = originalStatus || 'NEW';\nconst shouldProcess = normalizedStatus === 'NEW';\n\nreturn [{\n  json: {\n    ...row,\n    row_number: rowNumber,\n    form_title: songTitle,\n    form_artist: artist,\n    requester_name: requester,\n    dedication,\n    status_original: originalStatus,\n    status: normalizedStatus,\n    should_process: shouldProcess,\n    has_required_title: songTitle.length > 0,\n    spotify_playlist_id_placeholder: '__SPOTIFY_PLAYLIST_ID__'\n  }\n}];"
+        "jsCode": "function firstValue(row, keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nreturn $input.all().filter((item) => {\n  const row = item.json;\n  const status = firstValue(row, ['status', 'Status']);\n  const timestamp = firstValue(row, ['Sygnatura czasowa', 'Timestamp', 'timestamp']);\n  return status === '' && timestamp !== '';\n});"
       },
-      "id": "7b573af8-9b1d-4710-8b15-640df2c58258",
-      "name": "Prepare request data and default status NEW",
+      "id": "9cadb087-b438-4016-9d59-feb54caa2d06",
+      "name": "Filter - only empty status rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -40,
-        160
+        -160,
+        120
       ]
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "77a3d0fc-cbe2-403e-9425-6568209a0d34",
-              "leftValue": "={{ $json.should_process }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
+        "batchSize": 1,
         "options": {}
       },
-      "id": "8afdf9e9-7d29-49fe-952a-a5d72bd8acfc",
-      "name": "IF - status is empty or NEW",
-      "type": "n8n-nodes-base.if",
+      "id": "49c3f917-2743-4da3-8a1d-841af0a69044",
+      "name": "Loop - process one request row",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        120,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\n\nfunction firstValue(keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nconst timestamp = firstValue(['Sygnatura czasowa', 'Timestamp', 'timestamp']);\nconst title = firstValue(['Tytuł utworu', 'Tytul utworu', 'song_title_raw', 'Song title', 'Song Title', 'title', 'Title']);\nconst artist = firstValue(['Wykonawca', 'artist_raw', 'Artist', 'artist']);\nconst requester = firstValue(['Imię / stolik', 'Imie / stolik', 'requester_name', 'Your name', 'Name', 'Imie', 'Stolik', 'Table']);\nconst comment = firstValue(['Komentarz', 'komentarz', 'dedication', 'Dedication', 'Dedykacja', 'comment', 'Comment']);\n\nreturn [{\n  json: {\n    ...row,\n    timestamp_signature: timestamp,\n    form_title: title,\n    form_artist: artist,\n    requester_name: requester,\n    comment,\n    has_required_title: title.length > 0\n  }\n}];"
+      },
+      "id": "7b573af8-9b1d-4710-8b15-640df2c58258",
+      "name": "Prepare request - map form fields",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
-        160
+        420,
+        20
       ]
     },
     {
@@ -137,189 +144,99 @@
         "options": {}
       },
       "id": "1704ca16-9979-4a31-bc5a-71caa966ea3c",
-      "name": "IF - song title is present",
+      "name": "IF - title exists",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        500,
-        60
+        700,
+        20
       ]
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
+        "modelId": {
           "__rl": true,
-          "value": "__GOOGLE_SPREADSHEET_ID__",
-          "mode": "id"
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-MINI"
         },
-        "sheetName": {
-          "__rl": true,
-          "value": "__REQUESTS_SHEET_NAME__",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "row_number": "={{ $json.row_number }}",
-            "status": "NEW",
-            "dj_note": "={{ $json.status_original ? $json.dj_note || '' : 'Workflow marked this new form response as NEW.' }}"
-          },
-          "matchingColumns": [
-            "row_number"
-          ],
-          "schema": [
+        "messages": {
+          "values": [
             {
-              "id": "row_number",
-              "displayName": "row_number",
-              "required": false,
-              "defaultMatch": true,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
+              "role": "system",
+              "content": "You normalize music requests for a DJ. Return only a strict JSON object with keys AI_title, AI_artist, spotify_query. Do not invent an artist when it is unknown. Keep values concise."
             },
             {
-              "id": "status",
-              "displayName": "status",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": false
-            },
-            {
-              "id": "dj_note",
-              "displayName": "dj_note",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": false
+              "content": "=Normalize this music request.\n\nTitle: {{ $('Prepare request - map form fields').item.json.form_title }}\nArtist: {{ $('Prepare request - map form fields').item.json.form_artist }}\nRequester/table: {{ $('Prepare request - map form fields').item.json.requester_name }}\nComment: {{ $('Prepare request - map form fields').item.json.comment }}\n\nReturn JSON like:\n{\"AI_title\":\"...\",\"AI_artist\":\"...\",\"spotify_query\":\"...\"}"
             }
           ]
         },
-        "options": {}
-      },
-      "id": "d91e2bbd-17fb-47f0-a2d5-f5d111f3db70",
-      "name": "Google Sheets - set status NEW",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4,
-      "position": [
-        780,
-        -40
-      ],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "__GOOGLE_SHEETS_CREDENTIAL_ID__",
-          "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { model: 'gpt-4.1-mini', response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You normalize music requests for a DJ. Return only valid JSON with keys AI_title, AI_artist, spotify_query. Do not invent an artist when it is unknown. Keep values concise.' }, { role: 'user', content: 'Normalize this request. Title: ' + $('Prepare request data and default status NEW').first().json.form_title + '\\nArtist: ' + ($('Prepare request data and default status NEW').first().json.form_artist || '') + '\\nRequester/table: ' + ($('Prepare request data and default status NEW').first().json.requester_name || '') + '\\nDedication: ' + ($('Prepare request data and default status NEW').first().json.dedication || '') } ], temperature: 0.1 } }}",
+        "jsonOutput": true,
         "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
+          "temperature": 0.1
         }
       },
       "id": "800bd3dc-7425-442c-b390-f7fab558d62b",
-      "name": "OpenAI - normalize title artist and query",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "name": "OpenAI - normalize request to JSON",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
       "position": [
-        1060,
-        -40
+        980,
+        -80
       ],
       "credentials": {
         "openAiApi": {
-          "id": "__OPENAI_CREDENTIAL_ID__",
           "name": "__OPENAI_CREDENTIAL_NAME__"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "const request = $('Prepare request data and default status NEW').first().json;\nconst response = $json;\nconst content = response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '';\nlet ai = {};\n\ntry {\n  ai = typeof content === 'string' ? JSON.parse(content) : content;\n} catch (error) {\n  ai = {};\n}\n\nconst aiTitle = String(ai.AI_title || ai.title || request.form_title || '').trim();\nconst aiArtist = String(ai.AI_artist || ai.artist || request.form_artist || '').trim();\nlet spotifyQuery = String(ai.spotify_query || '').trim();\n\nif (!spotifyQuery) {\n  spotifyQuery = [aiTitle, aiArtist].filter(Boolean).join(' ');\n}\n\nreturn [{\n  json: {\n    ...request,\n    AI_title: aiTitle,\n    AI_artist: aiArtist,\n    spotify_query: spotifyQuery,\n    ai_raw_response: content\n  }\n}];"
+        "jsCode": "const request = $('Prepare request - map form fields').first().json;\nconst response = $json;\nconst content = response.message?.content ?? response.text ?? response.output ?? response.content ?? response;\nlet ai = {};\n\nif (typeof content === 'string') {\n  try {\n    ai = JSON.parse(content);\n  } catch (error) {\n    ai = {};\n  }\n} else if (content && typeof content === 'object') {\n  ai = content;\n}\n\nconst aiTitle = String(ai.AI_title || ai.title || request.form_title || '').trim();\nconst aiArtist = String(ai.AI_artist || ai.artist || request.form_artist || '').trim();\nlet spotifyQuery = String(ai.spotify_query || ai.query || '').trim();\n\nif (!spotifyQuery) {\n  spotifyQuery = [aiTitle, aiArtist].filter(Boolean).join(' ');\n}\n\nreturn [{\n  json: {\n    ...request,\n    AI_title: aiTitle,\n    AI_artist: aiArtist,\n    spotify_query: spotifyQuery,\n    confidence: 0,\n    ai_raw_response: typeof content === 'string' ? content : JSON.stringify(content)\n  }\n}];"
       },
       "id": "7fa67dce-40ff-41e3-bd04-f1e89c6d5fd1",
-      "name": "Parse OpenAI JSON normalization",
+      "name": "Parse OpenAI normalization",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1340,
-        -40
+        1260,
+        -80
       ]
     },
     {
       "parameters": {
-        "url": "https://api.spotify.com/v1/search",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "q",
-              "value": "={{ $json.spotify_query }}"
-            },
-            {
-              "name": "type",
-              "value": "track"
-            },
-            {
-              "name": "limit",
-              "value": "5"
-            },
-            {
-              "name": "market",
-              "value": "PL"
-            }
-          ]
-        },
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
-        }
+        "resource": "track",
+        "operation": "search",
+        "query": "={{ $json.spotify_query }}",
+        "limit": 5,
+        "filters": {}
       },
       "id": "2eeb16c0-2710-4d77-a2e0-701c0fe7dbf8",
-      "name": "Spotify - search tracks",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "name": "Spotify - search tracks by query",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
       "position": [
-        1620,
-        -40
+        1540,
+        -80
       ],
       "credentials": {
         "spotifyOAuth2Api": {
-          "id": "__SPOTIFY_CREDENTIAL_ID__",
           "name": "__SPOTIFY_CREDENTIAL_NAME__"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "const request = $('Parse OpenAI JSON normalization').first().json;\nconst items = $json.tracks?.items || $json.body?.tracks?.items || [];\n\nfunction clean(value) {\n  return String(value || '')\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction scoreTrack(track) {\n  const titleNeedle = clean(request.AI_title || request.form_title);\n  const artistNeedle = clean(request.AI_artist || request.form_artist);\n  const trackTitle = clean(track.name);\n  const trackArtists = clean((track.artists || []).map((artist) => artist.name).join(' '));\n\n  let score = 0;\n  if (titleNeedle && trackTitle === titleNeedle) score += 0.55;\n  else if (titleNeedle && trackTitle.includes(titleNeedle)) score += 0.42;\n  else if (titleNeedle && titleNeedle.includes(trackTitle)) score += 0.32;\n\n  if (artistNeedle && trackArtists.includes(artistNeedle)) score += 0.35;\n  else if (!artistNeedle) score += 0.15;\n\n  const query = clean(request.spotify_query);\n  if (query && clean(track.name + ' ' + trackArtists).includes(query)) score += 0.1;\n\n  const badVersion = /karaoke|tribute|cover|instrumental|Originally Performed/i.test(track.name + ' ' + ((track.album || {}).name || ''));\n  if (badVersion && !/karaoke|cover|instrumental/i.test(request.form_title + ' ' + request.dedication)) score -= 0.2;\n\n  return Math.max(0, Math.min(1, Number(score.toFixed(2))));\n}\n\nlet best = null;\nlet confidence = 0;\nfor (const track of items) {\n  const score = scoreTrack(track);\n  if (score > confidence) {\n    confidence = score;\n    best = track;\n  }\n}\n\nconst found = Boolean(best && best.uri && confidence >= 0.65);\nconst artistName = best?.artists?.map((artist) => artist.name).join(', ') || '';\n\nreturn [{\n  json: {\n    ...request,\n    spotify_track_name: found ? best.name : '',\n    spotify_artist: found ? artistName : '',\n    spotify_url: found ? (best.external_urls?.spotify || '') : '',\n    spotify_uri: found ? best.uri : '',\n    confidence,\n    status: found ? 'FOUND' : 'NOT_FOUND',\n    dj_note: found\n      ? 'Found by Spotify Search. DJ must manually approve before playlist workflow can add it.'\n      : `No sensible Spotify result for query: ${request.spotify_query}`\n  }\n}];"
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request = $('Parse OpenAI normalization').first().json;\nconst spotifyItems = $input.all().map((item) => item.json.track || item.json);\n\nfunction clean(value) {\n  return String(value || '')\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction artistsText(track) {\n  return (track.artists || []).map((artist) => artist.name || artist).filter(Boolean).join(', ');\n}\n\nfunction spotifyUrl(track) {\n  return track.external_urls?.spotify || track.externalUrls?.spotify || track.url || '';\n}\n\nfunction spotifyUri(track) {\n  if (track.uri) return track.uri;\n  if (track.id) return `spotify:track:${track.id}`;\n  return '';\n}\n\nfunction scoreTrack(track) {\n  const wantedTitle = clean(request.AI_title || request.form_title);\n  const wantedArtist = clean(request.AI_artist || request.form_artist);\n  const trackTitle = clean(track.name);\n  const trackArtists = clean(artistsText(track));\n  let score = 0;\n\n  if (wantedTitle && trackTitle === wantedTitle) score += 0.55;\n  else if (wantedTitle && trackTitle.includes(wantedTitle)) score += 0.42;\n  else if (wantedTitle && wantedTitle.includes(trackTitle)) score += 0.32;\n\n  if (wantedArtist && trackArtists.includes(wantedArtist)) score += 0.35;\n  else if (!wantedArtist) score += 0.15;\n\n  const query = clean(request.spotify_query);\n  if (query && clean(`${track.name} ${artistsText(track)}`).includes(query)) score += 0.1;\n\n  const versionText = `${track.name || ''} ${track.album?.name || ''}`;\n  const unwantedVersion = /karaoke|tribute|cover|instrumental|originally performed/i.test(versionText);\n  const requestedVersion = /karaoke|cover|instrumental|tribute/i.test(`${request.form_title} ${request.comment}`);\n  if (unwantedVersion && !requestedVersion) score -= 0.2;\n\n  return Math.max(0, Math.min(1, Number(score.toFixed(2))));\n}\n\nlet best = null;\nlet confidence = 0;\nfor (const track of spotifyItems) {\n  const score = scoreTrack(track);\n  if (score > confidence) {\n    confidence = score;\n    best = track;\n  }\n}\n\nconst found = Boolean(best && spotifyUri(best) && confidence >= 0.65);\n\nreturn [{\n  json: {\n    ...request,\n    spotify_track_name: found ? (best.name || '') : '',\n    spotify_artist: found ? artistsText(best) : '',\n    spotify_url: found ? spotifyUrl(best) : '',\n    spotify_uri: found ? spotifyUri(best) : '',\n    confidence,\n    status: found ? 'FOUND' : 'NOT_FOUND',\n    dj_note: found\n      ? 'Found by native Spotify node. DJ must manually approve before playlist workflow can add it.'\n      : `No sensible Spotify result for query: ${request.spotify_query}`\n  }\n}];"
       },
       "id": "d9a15a02-cd87-4d8f-9204-53e37957a33f",
-      "name": "Evaluate Spotify result and confidence",
+      "name": "Evaluate Spotify results and confidence",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1900,
-        -40
+        1820,
+        -80
       ]
     },
     {
@@ -346,12 +263,12 @@
         "options": {}
       },
       "id": "e6f6f49e-0863-4618-999b-609a71cbff74",
-      "name": "IF - Spotify match accepted",
+      "name": "IF - sensible Spotify match",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        2180,
-        -40
+        2100,
+        -80
       ]
     },
     {
@@ -370,7 +287,7 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "row_number": "={{ $json.row_number }}",
+            "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
             "AI_title": "={{ $json.AI_title }}",
             "AI_artist": "={{ $json.AI_artist }}",
             "spotify_query": "={{ $json.spotify_query }}",
@@ -383,12 +300,12 @@
             "dj_note": "={{ $json.dj_note }}"
           },
           "matchingColumns": [
-            "row_number"
+            "Sygnatura czasowa"
           ],
           "schema": [
             {
-              "id": "row_number",
-              "displayName": "row_number",
+              "id": "Sygnatura czasowa",
+              "displayName": "Sygnatura czasowa",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -464,7 +381,7 @@
               "required": false,
               "defaultMatch": false,
               "display": true,
-              "type": "string",
+              "type": "number",
               "canBeUsedToMatch": false
             },
             {
@@ -485,21 +402,22 @@
               "type": "string",
               "canBeUsedToMatch": false
             }
-          ]
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         },
         "options": {}
       },
       "id": "3dc793e0-6f67-41e1-ba4c-aab6d26d45a1",
-      "name": "Google Sheets - update row FOUND",
+      "name": "Google Sheets - update timestamp row FOUND",
       "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4,
+      "typeVersion": 4.7,
       "position": [
-        2460,
-        -140
+        2380,
+        -180
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "__GOOGLE_SHEETS_CREDENTIAL_ID__",
           "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
         }
       }
@@ -520,7 +438,7 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "row_number": "={{ $json.row_number }}",
+            "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
             "AI_title": "={{ $json.AI_title || '' }}",
             "AI_artist": "={{ $json.AI_artist || '' }}",
             "spotify_query": "={{ $json.spotify_query || '' }}",
@@ -533,12 +451,12 @@
             "dj_note": "={{ $json.dj_note || 'No sensible Spotify result was found.' }}"
           },
           "matchingColumns": [
-            "row_number"
+            "Sygnatura czasowa"
           ],
           "schema": [
             {
-              "id": "row_number",
-              "displayName": "row_number",
+              "id": "Sygnatura czasowa",
+              "displayName": "Sygnatura czasowa",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -614,7 +532,7 @@
               "required": false,
               "defaultMatch": false,
               "display": true,
-              "type": "string",
+              "type": "number",
               "canBeUsedToMatch": false
             },
             {
@@ -635,21 +553,22 @@
               "type": "string",
               "canBeUsedToMatch": false
             }
-          ]
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         },
         "options": {}
       },
       "id": "d3301054-3315-44a6-a2e0-d03883cd27c3",
-      "name": "Google Sheets - update row NOT_FOUND",
+      "name": "Google Sheets - update timestamp row NOT_FOUND",
       "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4,
+      "typeVersion": 4.7,
       "position": [
-        2460,
-        60
+        2380,
+        20
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "__GOOGLE_SHEETS_CREDENTIAL_ID__",
           "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
         }
       }
@@ -670,17 +589,17 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "row_number": "={{ $json.row_number }}",
+            "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
             "status": "NOT_FOUND",
             "dj_note": "Missing song title in the form response. Ask guest to submit again or fill it manually."
           },
           "matchingColumns": [
-            "row_number"
+            "Sygnatura czasowa"
           ],
           "schema": [
             {
-              "id": "row_number",
-              "displayName": "row_number",
+              "id": "Sygnatura czasowa",
+              "displayName": "Sygnatura czasowa",
               "required": false,
               "defaultMatch": true,
               "display": true,
@@ -705,21 +624,22 @@
               "type": "string",
               "canBeUsedToMatch": false
             }
-          ]
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         },
         "options": {}
       },
       "id": "c5a92f1e-3148-4ba8-a39e-4cb95489137c",
-      "name": "Google Sheets - reject missing title",
+      "name": "Google Sheets - update timestamp row missing title",
       "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4,
+      "typeVersion": 4.7,
       "position": [
-        780,
-        180
+        980,
+        120
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "__GOOGLE_SHEETS_CREDENTIAL_ID__",
           "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
         }
       }
@@ -727,125 +647,169 @@
   ],
   "pinData": {},
   "connections": {
-    "Trigger - new Google Sheet row": {
+    "Schedule Trigger - every 1 minute": {
       "main": [
         [
           {
-            "node": "Prepare request data and default status NEW",
+            "node": "Google Sheets - read request rows",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare request data and default status NEW": {
+    "Google Sheets - read request rows": {
       "main": [
         [
           {
-            "node": "IF - status is empty or NEW",
+            "node": "Filter - only empty status rows",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF - status is empty or NEW": {
+    "Filter - only empty status rows": {
       "main": [
         [
           {
-            "node": "IF - song title is present",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "IF - song title is present": {
-      "main": [
-        [
-          {
-            "node": "Google Sheets - set status NEW",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Google Sheets - reject missing title",
+            "node": "Loop - process one request row",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Google Sheets - set status NEW": {
+    "Loop - process one request row": {
       "main": [
+        [],
         [
           {
-            "node": "OpenAI - normalize title artist and query",
+            "node": "Prepare request - map form fields",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI - normalize title artist and query": {
+    "Prepare request - map form fields": {
       "main": [
         [
           {
-            "node": "Parse OpenAI JSON normalization",
+            "node": "IF - title exists",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse OpenAI JSON normalization": {
+    "IF - title exists": {
       "main": [
         [
           {
-            "node": "Spotify - search tracks",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Spotify - search tracks": {
-      "main": [
-        [
-          {
-            "node": "Evaluate Spotify result and confidence",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Evaluate Spotify result and confidence": {
-      "main": [
-        [
-          {
-            "node": "IF - Spotify match accepted",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF - Spotify match accepted": {
-      "main": [
-        [
-          {
-            "node": "Google Sheets - update row FOUND",
+            "node": "OpenAI - normalize request to JSON",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Google Sheets - update row NOT_FOUND",
+            "node": "Google Sheets - update timestamp row missing title",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - normalize request to JSON": {
+      "main": [
+        [
+          {
+            "node": "Parse OpenAI normalization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OpenAI normalization": {
+      "main": [
+        [
+          {
+            "node": "Spotify - search tracks by query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spotify - search tracks by query": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Spotify results and confidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Spotify results and confidence": {
+      "main": [
+        [
+          {
+            "node": "IF - sensible Spotify match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - sensible Spotify match": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - update timestamp row FOUND",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Sheets - update timestamp row NOT_FOUND",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - update timestamp row FOUND": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one request row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - update timestamp row NOT_FOUND": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one request row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - update timestamp row missing title": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one request row",
             "type": "main",
             "index": 0
           }
@@ -857,7 +821,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "0f85ef3b-1a15-49f2-b69c-7ef06f58df1c",
+  "versionId": "1bb4fb4d-97eb-41fa-9d14-78bbfa02835f",
   "meta": {
     "templateCredsSetupCompleted": false
   },
