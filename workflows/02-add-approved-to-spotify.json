@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "Workflow 02: every minute read Google Sheet rows, process rows with status APPROVED, add non-empty spotify_uri to the configured Spotify playlist, then update the same row by Sygnatura czasowa. This workflow is the only one that adds tracks to Spotify.",
+        "content": "Workflow 02: every minute read Google Sheet rows, process rows where akcja_dj is APPROVED and status is FOUND, add non-empty spotify_uri to the configured Spotify playlist, then update the same row by Sygnatura czasowa. This workflow is the only one that adds tracks to Spotify.",
         "height": 180,
         "width": 430
       },
@@ -82,10 +82,10 @@
     },
     {
       "parameters": {
-        "jsCode": "function firstValue(row, keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nreturn $input.all().filter((item) => {\n  const row = item.json;\n  const status = firstValue(row, ['status', 'Status']).toUpperCase();\n  const timestamp = firstValue(row, ['Sygnatura czasowa', 'Timestamp', 'timestamp']);\n  return status === 'APPROVED' && timestamp !== '';\n});"
+        "jsCode": "function firstValue(row, keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nreturn $input.all().filter((item) => {\n  const row = item.json;\n  const action = firstValue(row, ['akcja_dj', 'Akcja DJ', 'akcja dj']).toUpperCase();\n  const status = firstValue(row, ['status', 'Status']).toUpperCase();\n  const timestamp = firstValue(row, ['Sygnatura czasowa', 'Timestamp', 'timestamp']);\n\n  return action === 'APPROVED' && status === 'FOUND' && timestamp !== '';\n});"
       },
       "id": "00ba9b71-32d4-4c18-8b3e-ec760e7dd465",
-      "name": "Filter - only APPROVED rows",
+      "name": "Filter - only DJ approved FOUND rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -402,14 +402,14 @@
       "main": [
         [
           {
-            "node": "Filter - only APPROVED rows",
+            "node": "Filter - only DJ approved FOUND rows",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Filter - only APPROVED rows": {
+    "Filter - only DJ approved FOUND rows": {
       "main": [
         [
           {
