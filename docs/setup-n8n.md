@@ -45,6 +45,7 @@ Podmien:
 - `__GOOGLE_SHEETS_CREDENTIAL_NAME__`
 - `__OPENAI_CREDENTIAL_NAME__`
 - `__SPOTIFY_CREDENTIAL_NAME__`
+- `__SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__`
 - `__SPOTIFY_PLAYLIST_ID__`
 
 `__GOOGLE_SPREADSHEET_ID__` to ID arkusza z URL:
@@ -61,7 +62,7 @@ Przyklad URL playlisty:
 
 W takim przypadku `PLAYLIST_ID` to wartosc do wpisania w node:
 
-`Spotify - add track to playlist`
+`HTTP Request - add track to Spotify playlist`
 
 Node'y Google Sheets do sprawdzenia:
 
@@ -106,7 +107,7 @@ Node jest ustawiony na model `gpt-4.1-mini`, ma wlaczone `jsonOutput: true` i pr
 
 Jesli w Twojej instancji n8n model nie jest dostepny, wybierz dostepny model w UI node'a OpenAI i zostaw ten sam prompt oraz `jsonOutput`.
 
-### Spotify OAuth2
+### Spotify OAuth2 dla workflow 01
 
 Utworz albo wybierz credential:
 
@@ -129,7 +130,39 @@ Konfiguracja node'a Spotify:
 
 Ten workflow tylko wyszukuje utwory. Scope do modyfikacji playlisty bedzie potrzebny dopiero w workflow `02-add-approved-to-spotify.json`.
 
-Dla workflow 02 credential Spotify musi pozwalac na modyfikacje playlisty:
+### Spotify HTTP OAuth2 dla workflow 02
+
+Workflow 02 nie uzywa natywnego node'a Spotify do dodawania utworu do playlisty. Dodawanie jest wykonywane przez node:
+
+`HTTP Request - add track to Spotify playlist`
+
+Ten node uzywa OAuth2 credential pod placeholderem:
+
+`__SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__`
+
+Utworz w n8n credential typu OAuth2 / HTTP OAuth2 zgodny z HTTP Request node. Skonfiguruj go dla Spotify Web API:
+
+- Access Token URL: `https://accounts.spotify.com/api/token`
+- Authorization URL: `https://accounts.spotify.com/authorize`
+- Scope: `playlist-modify-public playlist-modify-private`
+
+W samym node `HTTP Request - add track to Spotify playlist` ustawienia sa:
+
+- Method: `POST`
+- URL: `https://api.spotify.com/v1/playlists/__SPOTIFY_PLAYLIST_ID__/items`
+- Authentication: OAuth2 / predefined credential type zgodny z HTTP Request node
+- Body Content Type: JSON
+- Body:
+
+```json
+{
+  "uris": ["{{ $json.spotify_uri }}"]
+}
+```
+
+Credential musi miec dostep do konta Spotify, ktore moze modyfikowac wybrana playliste.
+
+Dla workflow 02 credential HTTP OAuth2 musi pozwalac na modyfikacje playlisty:
 
 - `playlist-modify-public` dla playlisty publicznej,
 - `playlist-modify-private` dla playlisty prywatnej.
@@ -295,7 +328,15 @@ Dziala tak:
 3. `Filter - only APPROVED rows` zostawia tylko wiersze ze statusem `APPROVED`.
 4. `Prepare approved row` pobiera `Sygnatura czasowa` i `spotify_uri`.
 5. `IF - spotify_uri exists` rozdziela poprawne i bledne wiersze.
-6. `Spotify - add track to playlist` dodaje utwor do playlisty `__SPOTIFY_PLAYLIST_ID__`.
+6. `HTTP Request - add track to Spotify playlist` wysyla `POST` do Spotify Web API:
+   `https://api.spotify.com/v1/playlists/__SPOTIFY_PLAYLIST_ID__/items`
+   z body:
+
+```json
+{
+  "uris": ["{{ $json.spotify_uri }}"]
+}
+```
 7. Po sukcesie `Google Sheets - update timestamp row ADDED` ustawia:
    - `status = ADDED`
    - `dj_note = Added to Spotify playlist`
@@ -321,7 +362,7 @@ wez fragment `PLAYLIST_ID`.
 
 4. W n8n otworz node:
 
-`Spotify - add track to playlist`
+`HTTP Request - add track to Spotify playlist`
 
 5. W polu playlisty podmien:
 
@@ -331,7 +372,7 @@ na swoje `PLAYLIST_ID`.
 
 Nie wpisuj tokenow OAuth, client secret ani innych sekretow do workflow JSON. Do autoryzacji uzyj credential:
 
-`__SPOTIFY_CREDENTIAL_NAME__`
+`__SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__`
 
 ## 14. Reczny test FOUND -> APPROVED -> ADDED
 
@@ -346,8 +387,8 @@ Nie wpisuj tokenow OAuth, client secret ani innych sekretow do workflow JSON. Do
    - `Filter - only APPROVED rows`
    - powinien przepuscic testowy wiersz
 6. Sprawdz node:
-   - `Spotify - add track to playlist`
-   - powinien dodac `spotify_uri` do playlisty
+   - `HTTP Request - add track to Spotify playlist`
+   - powinien wyslac `spotify_uri` do endpointu Spotify playlist items
 7. Sprawdz Google Sheet:
    - `status = ADDED`
    - `dj_note = Added to Spotify playlist`
@@ -407,5 +448,21 @@ Sprawdz:
 - czy wiersz ma dokladnie `status = APPROVED`,
 - czy `spotify_uri` nie jest puste,
 - czy `__SPOTIFY_PLAYLIST_ID__` zostal podmieniony,
-- czy credential Spotify ma scope do modyfikacji playlisty,
+- czy `__SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__` jest podpiety w HTTP Request node,
+- czy HTTP OAuth2 credential ma scope do modyfikacji playlisty,
 - czy konto Spotify z credential jest wlascicielem albo ma dostep do playlisty.
+
+### Co oznacza status ERROR w workflow 02
+
+`ERROR` oznacza, ze DJ zaakceptowal wiersz, ale workflow 02 nie mogl dodac utworu do playlisty.
+
+Najczestsze powody:
+
+- `spotify_uri` jest puste,
+- `spotify_uri` ma zly format,
+- playlist ID jest niepoprawne,
+- credential HTTP OAuth2 nie ma wymaganych scope,
+- konto Spotify nie ma dostepu do playlisty,
+- Spotify API zwrocilo blad.
+
+Szczegol bledu jest zapisywany w `dj_note`.

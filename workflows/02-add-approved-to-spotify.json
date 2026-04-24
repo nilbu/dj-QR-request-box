@@ -18,8 +18,8 @@
     },
     {
       "parameters": {
-        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n- __SPOTIFY_PLAYLIST_ID__\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Do not use row_number as a match key.",
-        "height": 240,
+        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__\n- __SPOTIFY_PLAYLIST_ID__\n\nSpotify HTTP OAuth2 credential:\n- Authorization URL: https://accounts.spotify.com/authorize\n- Access Token URL: https://accounts.spotify.com/api/token\n- Scope: playlist-modify-public playlist-modify-private\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Do not use row_number as a match key.",
+        "height": 320,
         "width": 430
       },
       "id": "cc5a8670-50f6-4c65-8fea-b326dc85ce35",
@@ -154,29 +154,39 @@
     },
     {
       "parameters": {
-        "id": "__SPOTIFY_PLAYLIST_ID__",
-        "trackID": "={{ $json.spotify_uri }}",
-        "resource": "playlist",
-        "additionalFields": {}
+        "method": "POST",
+        "url": "https://api.spotify.com/v1/playlists/__SPOTIFY_PLAYLIST_ID__/items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"uris\": [\"{{ $json.spotify_uri }}\"]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
       },
       "id": "497070f1-e9f2-44b8-8730-a111bb496fac",
-      "name": "Spotify - add track to playlist",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
+      "name": "HTTP Request - add track to Spotify playlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         980,
         -80
       ],
       "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "__SPOTIFY_CREDENTIAL_NAME__"
+        "oAuth2Api": {
+          "name": "__SPOTIFY_HTTP_OAUTH_CREDENTIAL_NAME__"
         }
       },
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const request = $('Prepare approved row').first().json;\nconst response = $json;\nconst errorMessage = response.error?.message || response.error || response.message || '';\nconst failed = Boolean(errorMessage && !response.snapshot_id && !response.snapshotId);\n\nreturn [{\n  json: {\n    ...request,\n    spotify_add_response: response,\n    add_failed: failed,\n    add_error_message: failed ? String(errorMessage) : '',\n    status: failed ? 'ERROR' : 'ADDED',\n    dj_note: failed ? `Spotify add failed: ${String(errorMessage)}` : 'Added to Spotify playlist'\n  }\n}];"
+        "jsCode": "const request = $('Prepare approved row').first().json;\nconst response = $json;\nconst errorValue = response.error?.message || response.error || response.message || response.body?.error?.message || '';\nconst statusCode = Number(response.statusCode || response.status || response.code || 0);\nconst failed = Boolean(errorValue) || statusCode >= 400;\nconst errorMessage = failed\n  ? String(errorValue || `Spotify API returned status ${statusCode}`)\n  : '';\n\nreturn [{\n  json: {\n    ...request,\n    spotify_add_response: response,\n    add_failed: failed,\n    add_error_message: errorMessage,\n    status: failed ? 'ERROR' : 'ADDED',\n    dj_note: failed ? `Spotify add failed: ${errorMessage}` : 'Added to Spotify playlist'\n  }\n}];"
       },
       "id": "a60bd1fa-9615-4393-ab89-b90717d60e19",
       "name": "Prepare Spotify add result",
@@ -437,7 +447,7 @@
       "main": [
         [
           {
-            "node": "Spotify - add track to playlist",
+            "node": "HTTP Request - add track to Spotify playlist",
             "type": "main",
             "index": 0
           }
@@ -451,7 +461,7 @@
         ]
       ]
     },
-    "Spotify - add track to playlist": {
+    "HTTP Request - add track to Spotify playlist": {
       "main": [
         [
           {
