@@ -4,6 +4,10 @@ Ten dokument opisuje import i test workflow:
 
 `workflows/01-process-new-request.json`
 
+oraz:
+
+`workflows/02-add-approved-to-spotify.json`
+
 Workflow dziala w trybie polling:
 
 1. Co 1 minute uruchamia go `Schedule Trigger`.
@@ -13,7 +17,9 @@ Workflow dziala w trybie polling:
 5. Wyszukuje utwor przez natywny node Spotify.
 6. Aktualizuje ten sam wiersz po kolumnie `Sygnatura czasowa`.
 
-Ten workflow nie dodaje utworow do playlisty Spotify. Konczy prace na statusie `FOUND` albo `NOT_FOUND`.
+Workflow 01 nie dodaje utworow do playlisty Spotify. Konczy prace na statusie `FOUND` albo `NOT_FOUND`.
+
+Workflow 02 dodaje do playlisty tylko wiersze, ktore DJ recznie oznaczy jako `APPROVED`.
 
 ## 1. Import workflow
 
@@ -22,9 +28,11 @@ Ten workflow nie dodaje utworow do playlisty Spotify. Konczy prace na statusie `
 3. Wybierz `Import from File`.
 4. Wskaz plik:
    `workflows/01-process-new-request.json`
-5. Po imporcie zostaw workflow jako `Inactive`.
-6. Otworz workflow i sprawdz sticky notes po lewej stronie.
-7. Podmien placeholdery i podepnij credentials przed pierwszym uruchomieniem.
+5. Powtorz import dla:
+   `workflows/02-add-approved-to-spotify.json`
+6. Po imporcie zostaw oba workflow jako `Inactive`.
+7. Otworz kazdy workflow i sprawdz sticky notes po lewej stronie.
+8. Podmien placeholdery i podepnij credentials przed pierwszym uruchomieniem.
 
 ## 2. Placeholdery do podmiany
 
@@ -37,6 +45,7 @@ Podmien:
 - `__GOOGLE_SHEETS_CREDENTIAL_NAME__`
 - `__OPENAI_CREDENTIAL_NAME__`
 - `__SPOTIFY_CREDENTIAL_NAME__`
+- `__SPOTIFY_PLAYLIST_ID__`
 
 `__GOOGLE_SPREADSHEET_ID__` to ID arkusza z URL:
 
@@ -44,12 +53,24 @@ Podmien:
 
 `__REQUESTS_SHEET_NAME__` to nazwa zakladki z odpowiedziami, np. `Requests`.
 
+`__SPOTIFY_PLAYLIST_ID__` to ID albo URI playlisty Spotify uzywanej przez workflow 02.
+
+Przyklad URL playlisty:
+
+`https://open.spotify.com/playlist/PLAYLIST_ID`
+
+W takim przypadku `PLAYLIST_ID` to wartosc do wpisania w node:
+
+`Spotify - add track to playlist`
+
 Node'y Google Sheets do sprawdzenia:
 
 - `Google Sheets - read request rows`
 - `Google Sheets - update timestamp row FOUND`
 - `Google Sheets - update timestamp row NOT_FOUND`
 - `Google Sheets - update timestamp row missing title`
+- `Google Sheets - update timestamp row ADDED`
+- `Google Sheets - update timestamp row ERROR`
 
 ## 3. Credentials do wyboru
 
@@ -108,6 +129,11 @@ Konfiguracja node'a Spotify:
 
 Ten workflow tylko wyszukuje utwory. Scope do modyfikacji playlisty bedzie potrzebny dopiero w workflow `02-add-approved-to-spotify.json`.
 
+Dla workflow 02 credential Spotify musi pozwalac na modyfikacje playlisty:
+
+- `playlist-modify-public` dla playlisty publicznej,
+- `playlist-modify-private` dla playlisty prywatnej.
+
 ## 4. Wymagane kolumny Google Sheet
 
 Kolumny wejscia z Google Form:
@@ -133,6 +159,13 @@ Kolumny zapisywane przez workflow:
 - `confidence`
 - `status`
 - `dj_note`
+
+Workflow 02 dodatkowo wymaga, zeby po workflow 01 wiersz mial:
+
+- `status`
+- `spotify_uri`
+
+DJ recznie zmienia `status` z `FOUND` na `APPROVED`. Workflow 02 przetwarza tylko wiersze z `status = APPROVED`.
 
 ## 5. Jak workflow wybiera wiersze
 
@@ -249,7 +282,88 @@ Oczekiwany wynik:
 - Nie dodawaj w tym workflow nic do playlisty Spotify.
 - Dodawanie do playlisty moze zrobic dopiero osobny workflow po recznej akceptacji DJ-a.
 
-## 12. Typowe problemy
+## 12. Workflow 02: dodawanie zaakceptowanych utworow
+
+Workflow:
+
+`workflows/02-add-approved-to-spotify.json`
+
+Dziala tak:
+
+1. `Schedule Trigger - every 1 minute` uruchamia workflow co minute.
+2. `Google Sheets - read request rows` pobiera wiersze z arkusza.
+3. `Filter - only APPROVED rows` zostawia tylko wiersze ze statusem `APPROVED`.
+4. `Prepare approved row` pobiera `Sygnatura czasowa` i `spotify_uri`.
+5. `IF - spotify_uri exists` rozdziela poprawne i bledne wiersze.
+6. `Spotify - add track to playlist` dodaje utwor do playlisty `__SPOTIFY_PLAYLIST_ID__`.
+7. Po sukcesie `Google Sheets - update timestamp row ADDED` ustawia:
+   - `status = ADDED`
+   - `dj_note = Added to Spotify playlist`
+8. Gdy `spotify_uri` jest puste albo dodanie do Spotify sie nie uda, `Google Sheets - update timestamp row ERROR` ustawia:
+   - `status = ERROR`
+   - `dj_note` z komunikatem bledu
+
+Workflow 02 aktualizuje wiersze po kolumnie:
+
+`Sygnatura czasowa`
+
+Nie uzywa `row_number` jako match key.
+
+## 13. Jak ustawic playlist ID
+
+1. Otworz playlist Spotify.
+2. Skopiuj link do playlisty.
+3. Z linku:
+
+`https://open.spotify.com/playlist/PLAYLIST_ID`
+
+wez fragment `PLAYLIST_ID`.
+
+4. W n8n otworz node:
+
+`Spotify - add track to playlist`
+
+5. W polu playlisty podmien:
+
+`__SPOTIFY_PLAYLIST_ID__`
+
+na swoje `PLAYLIST_ID`.
+
+Nie wpisuj tokenow OAuth, client secret ani innych sekretow do workflow JSON. Do autoryzacji uzyj credential:
+
+`__SPOTIFY_CREDENTIAL_NAME__`
+
+## 14. Reczny test FOUND -> APPROVED -> ADDED
+
+1. Uruchom workflow 01 na testowym formularzu.
+2. Poczekaj, az w Google Sheet wiersz dostanie:
+   - `status = FOUND`
+   - `spotify_uri` wypelnione
+3. DJ albo tester recznie zmienia w tym samym wierszu:
+   - `status` z `FOUND` na `APPROVED`
+4. Uruchom workflow 02 recznie przez `Execute Workflow` albo aktywuj go i poczekaj maksymalnie 1 minute.
+5. Sprawdz node:
+   - `Filter - only APPROVED rows`
+   - powinien przepuscic testowy wiersz
+6. Sprawdz node:
+   - `Spotify - add track to playlist`
+   - powinien dodac `spotify_uri` do playlisty
+7. Sprawdz Google Sheet:
+   - `status = ADDED`
+   - `dj_note = Added to Spotify playlist`
+8. Sprawdz playlist Spotify i potwierdz, ze utwor zostal dodany.
+
+Test bledu:
+
+1. Ustaw w testowym wierszu:
+   - `status = APPROVED`
+   - `spotify_uri` puste
+2. Uruchom workflow 02.
+3. Oczekiwany wynik:
+   - `status = ERROR`
+   - `dj_note = Cannot add to Spotify playlist: spotify_uri is empty for an APPROVED row.`
+
+## 15. Typowe problemy
 
 ### Workflow nie widzi nowych formularzy
 
@@ -285,3 +399,13 @@ Sprawdz:
 - czy node ma `Resource = track`,
 - czy node ma `Operation = search`,
 - czy `spotify_query` nie jest puste.
+
+### Workflow 02 nie dodaje do playlisty
+
+Sprawdz:
+
+- czy wiersz ma dokladnie `status = APPROVED`,
+- czy `spotify_uri` nie jest puste,
+- czy `__SPOTIFY_PLAYLIST_ID__` zostal podmieniony,
+- czy credential Spotify ma scope do modyfikacji playlisty,
+- czy konto Spotify z credential jest wlascicielem albo ma dostep do playlisty.

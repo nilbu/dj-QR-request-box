@@ -1,0 +1,538 @@
+{
+  "name": "02 - Add approved DJ request to Spotify",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "Workflow 02: every minute read Google Sheet rows, process rows with status APPROVED, add non-empty spotify_uri to the configured Spotify playlist, then update the same row by Sygnatura czasowa. This workflow is the only one that adds tracks to Spotify.",
+        "height": 180,
+        "width": 430
+      },
+      "id": "a30bb8c6-22de-44d0-9b20-450ff59ec6cf",
+      "name": "README - workflow scope",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1180,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n- __SPOTIFY_PLAYLIST_ID__\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Do not use row_number as a match key.",
+        "height": 240,
+        "width": 430
+      },
+      "id": "cc5a8670-50f6-4c65-8fea-b326dc85ce35",
+      "name": "README - placeholders and match key",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1180,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "99b3c7d5-6ae8-4c6c-ae39-1b3037df9298",
+      "name": "Schedule Trigger - every 1 minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "__GOOGLE_SPREADSHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "__REQUESTS_SHEET_NAME__",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "3eb25f48-3c8e-48db-9523-8d6278311172",
+      "name": "Google Sheets - read request rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -440,
+        120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function firstValue(row, keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nreturn $input.all().filter((item) => {\n  const row = item.json;\n  const status = firstValue(row, ['status', 'Status']).toUpperCase();\n  const timestamp = firstValue(row, ['Sygnatura czasowa', 'Timestamp', 'timestamp']);\n  return status === 'APPROVED' && timestamp !== '';\n});"
+      },
+      "id": "00ba9b71-32d4-4c18-8b3e-ec760e7dd465",
+      "name": "Filter - only APPROVED rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "4a25975f-79e2-4ac9-9860-9a5864be77fb",
+      "name": "Loop - process one approved row",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        120,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\n\nfunction firstValue(keys) {\n  for (const key of keys) {\n    const value = row[key];\n    if (value !== undefined && value !== null && String(value).trim() !== '') {\n      return String(value).trim();\n    }\n  }\n  return '';\n}\n\nconst timestamp = firstValue(['Sygnatura czasowa', 'Timestamp', 'timestamp']);\nconst spotifyUri = firstValue(['spotify_uri', 'Spotify URI', 'spotifyUri']);\n\nreturn [{\n  json: {\n    ...row,\n    timestamp_signature: timestamp,\n    spotify_uri: spotifyUri,\n    has_spotify_uri: spotifyUri.length > 0\n  }\n}];"
+      },
+      "id": "12d921da-840e-4a88-8b0a-c7856f3446aa",
+      "name": "Prepare approved row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "aa2821bb-5b78-4604-921d-337fdd4f5eac",
+              "leftValue": "={{ $json.has_spotify_uri }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6361956-32fa-4538-a1ef-9f38ec178106",
+      "name": "IF - spotify_uri exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "id": "__SPOTIFY_PLAYLIST_ID__",
+        "trackID": "={{ $json.spotify_uri }}",
+        "resource": "playlist",
+        "additionalFields": {}
+      },
+      "id": "497070f1-e9f2-44b8-8730-a111bb496fac",
+      "name": "Spotify - add track to playlist",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        980,
+        -80
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "__SPOTIFY_CREDENTIAL_NAME__"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $('Prepare approved row').first().json;\nconst response = $json;\nconst errorMessage = response.error?.message || response.error || response.message || '';\nconst failed = Boolean(errorMessage && !response.snapshot_id && !response.snapshotId);\n\nreturn [{\n  json: {\n    ...request,\n    spotify_add_response: response,\n    add_failed: failed,\n    add_error_message: failed ? String(errorMessage) : '',\n    status: failed ? 'ERROR' : 'ADDED',\n    dj_note: failed ? `Spotify add failed: ${String(errorMessage)}` : 'Added to Spotify playlist'\n  }\n}];"
+      },
+      "id": "a60bd1fa-9615-4393-ab89-b90717d60e19",
+      "name": "Prepare Spotify add result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c7763e65-b629-4eda-a1dc-d74c3e005f14",
+              "leftValue": "={{ $json.add_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2b50ee12-f195-488e-85ad-1c81a9ff2645",
+      "name": "IF - Spotify add failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__GOOGLE_SPREADSHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "__REQUESTS_SHEET_NAME__",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
+            "status": "ADDED",
+            "dj_note": "Added to Spotify playlist"
+          },
+          "matchingColumns": [
+            "Sygnatura czasowa"
+          ],
+          "schema": [
+            {
+              "id": "Sygnatura czasowa",
+              "displayName": "Sygnatura czasowa",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dj_note",
+              "displayName": "dj_note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "87a8e10e-dcef-4564-a73b-8d67958a6a66",
+      "name": "Google Sheets - update timestamp row ADDED",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        20
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__GOOGLE_SPREADSHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "__REQUESTS_SHEET_NAME__",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
+            "status": "ERROR",
+            "dj_note": "={{ $json.dj_note }}"
+          },
+          "matchingColumns": [
+            "Sygnatura czasowa"
+          ],
+          "schema": [
+            {
+              "id": "Sygnatura czasowa",
+              "displayName": "Sygnatura czasowa",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dj_note",
+              "displayName": "dj_note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "01676b2b-e8a2-4dca-a805-c9adf5844a2a",
+      "name": "Google Sheets - update timestamp row ERROR",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1820,
+        -180
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "__GOOGLE_SHEETS_CREDENTIAL_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    ...$json,\n    status: 'ERROR',\n    dj_note: 'Cannot add to Spotify playlist: spotify_uri is empty for an APPROVED row.'\n  }\n}];"
+      },
+      "id": "c132614d-cfa4-43c8-a65b-b8a1f717349e",
+      "name": "Prepare ERROR - missing spotify_uri",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        120
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger - every 1 minute": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - read request rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - read request rows": {
+      "main": [
+        [
+          {
+            "node": "Filter - only APPROVED rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter - only APPROVED rows": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one approved row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop - process one approved row": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare approved row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare approved row": {
+      "main": [
+        [
+          {
+            "node": "IF - spotify_uri exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - spotify_uri exists": {
+      "main": [
+        [
+          {
+            "node": "Spotify - add track to playlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare ERROR - missing spotify_uri",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spotify - add track to playlist": {
+      "main": [
+        [
+          {
+            "node": "Prepare Spotify add result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Spotify add result": {
+      "main": [
+        [
+          {
+            "node": "IF - Spotify add failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Spotify add failed": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - update timestamp row ERROR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Sheets - update timestamp row ADDED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare ERROR - missing spotify_uri": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - update timestamp row ERROR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - update timestamp row ADDED": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one approved row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - update timestamp row ERROR": {
+      "main": [
+        [
+          {
+            "node": "Loop - process one approved row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b2213be8-b1e1-40ec-a936-6ae0d6d7c878",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "02-add-approved-to-spotify",
+  "tags": []
+}
