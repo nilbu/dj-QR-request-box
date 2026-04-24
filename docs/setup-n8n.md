@@ -115,8 +115,7 @@ Utworz albo wybierz credential:
 
 Podepnij go do:
 
-- `Spotify - search tracks by spotify_query`
-- `Spotify - fallback search by AI_title`
+- `Spotify - search tracks by query`
 
 Workflow uzywa natywnego node'a:
 
@@ -126,16 +125,8 @@ Konfiguracja node'a Spotify:
 
 - Resource: `track`
 - Operation: `search`
-- Query pierwszego node'a: `={{ $json.spotify_query }}`
-- Query fallback node'a: `={{ $json.AI_title }}`
+- Query: `={{ $json.spotify_query }}`
 - Limit: `5`
-
-Workflow 01 wykonuje dwa wyszukiwania Spotify:
-
-1. po `spotify_query` wygenerowanym przez OpenAI,
-2. po `AI_title` jako fallback.
-
-Node `Evaluate Spotify results and confidence` laczy wyniki z obu wyszukiwan, usuwa duplikaty po `uri/id`, ocenia wszystkie tracki jednym scoringiem i wybiera najlepszy wynik.
 
 Ten workflow tylko wyszukuje utwory. Scope do modyfikacji playlisty bedzie potrzebny dopiero w workflow `02-add-approved-to-spotify.json`.
 
@@ -263,9 +254,8 @@ W praktyce:
    - `Filter - only empty status rows` powinien przepuscic wiersz, bo `status` jest pusty.
    - `Prepare request - map form fields` powinien pokazac `form_title = September` i `timestamp_signature` z kolumny `Sygnatura czasowa`.
    - `OpenAI - normalize request to JSON` powinien zwrocic `AI_title`, `AI_artist`, `spotify_query`.
-   - `Spotify - search tracks by spotify_query` powinien zwrocic wyniki Spotify dla pelnego query.
-   - `Spotify - fallback search by AI_title` powinien zwrocic wyniki Spotify dla samego tytulu.
-   - `Evaluate Spotify results and confidence` powinien polaczyc oba zestawy wynikow, usunac duplikaty i ustawic `FOUND` albo `NOT_FOUND`.
+   - `Spotify - search tracks by query` powinien zwrocic wyniki Spotify.
+   - `Evaluate Spotify results and confidence` powinien wybrac najlepszy wynik i ustawic `FOUND` albo `NOT_FOUND`.
 9. W Google Sheet sprawdz, czy uzupelniony zostal wiersz z ta sama `Sygnatura czasowa`.
 
 Oczekiwany wynik dla poprawnego requestu:
@@ -457,9 +447,7 @@ Sprawdz:
 - czy credential Spotify jest podpiety,
 - czy node ma `Resource = track`,
 - czy node ma `Operation = search`,
-- czy `spotify_query` nie jest puste,
-- czy `AI_title` nie jest puste,
-- czy oba node'y Spotify zwracaja wyniki albo czy fallback po `AI_title` poprawia wynik.
+- czy `spotify_query` nie jest puste.
 
 ### Workflow 02 nie dodaje do playlisty
 
