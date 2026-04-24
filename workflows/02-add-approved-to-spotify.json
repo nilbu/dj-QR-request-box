@@ -247,6 +247,7 @@
           "value": {
             "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
             "status": "ADDED",
+            "akcja_dj": "",
             "dj_note": "Added to Spotify playlist"
           },
           "matchingColumns": [
@@ -265,6 +266,15 @@
             {
               "id": "status",
               "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "akcja_dj",
+              "displayName": "akcja_dj",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -318,6 +328,7 @@
           "value": {
             "Sygnatura czasowa": "={{ $json.timestamp_signature }}",
             "status": "ERROR",
+            "akcja_dj": "",
             "dj_note": "={{ $json.dj_note }}"
           },
           "matchingColumns": [
@@ -336,6 +347,15 @@
             {
               "id": "status",
               "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "akcja_dj",
+              "displayName": "akcja_dj",
               "required": false,
               "defaultMatch": false,
               "display": true,

@@ -18,8 +18,8 @@
     },
     {
       "parameters": {
-        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __OPENAI_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Empty status means the row is new and ready to process.",
-        "height": 260,
+        "content": "Required placeholders:\n- __GOOGLE_SPREADSHEET_ID__\n- __REQUESTS_SHEET_NAME__\n- __GOOGLE_SHEETS_CREDENTIAL_NAME__\n- __OPENAI_CREDENTIAL_NAME__\n- __SPOTIFY_CREDENTIAL_NAME__\n- __TELEGRAM_CREDENTIAL_NAME__\n- __TELEGRAM_CHAT_ID__\n\nRows are matched and updated by the physical Google Form column: Sygnatura czasowa. Empty status means the row is new and ready to process. Telegram notification is sent after status FOUND is written to Google Sheets.",
+        "height": 320,
         "width": 420
       },
       "id": "e4b6fd7d-9ced-4837-b182-b281d1dfc646",
@@ -424,6 +424,27 @@
     },
     {
       "parameters": {
+        "chatId": "__TELEGRAM_CHAT_ID__",
+        "text": "=New DJ request found\n\nTrack: {{ $('Evaluate Spotify results and confidence').item.json.spotify_track_name }}\nArtist: {{ $('Evaluate Spotify results and confidence').item.json.spotify_artist }}\nRequester/table: {{ $('Evaluate Spotify results and confidence').item.json.requester_name || '-' }}\nComment: {{ $('Evaluate Spotify results and confidence').item.json.comment || '-' }}\nConfidence: {{ $('Evaluate Spotify results and confidence').item.json.confidence }}\nSpotify: {{ $('Evaluate Spotify results and confidence').item.json.spotify_url }}\n\nSet akcja_dj to APPROVED or SKIP in Google Sheets.",
+        "additionalFields": {}
+      },
+      "id": "74d8a18e-b7a4-4ad7-81e9-2d603e0bcb92",
+      "name": "Telegram - notify DJ after FOUND",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2660,
+        -180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "name": "__TELEGRAM_CREDENTIAL_NAME__"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
         "operation": "update",
         "documentId": {
           "__rl": true,
@@ -784,6 +805,17 @@
       ]
     },
     "Google Sheets - update timestamp row FOUND": {
+      "main": [
+        [
+          {
+            "node": "Telegram - notify DJ after FOUND",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - notify DJ after FOUND": {
       "main": [
         [
           {
